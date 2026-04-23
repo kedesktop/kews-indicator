@@ -61,7 +61,7 @@ namespace
 window::window(const Glib::RefPtr<Gtk::Application> &app)
 {
     app->signal_startup().connect(sigc::ptr_fun(&load_css));
-    app->signal_activate().connect([&]() { app->hold(); });
+    app->signal_activate().connect([&] { app->hold(); });
 
     m_window.set_default_size(50, 50);
 
@@ -187,18 +187,23 @@ window::set_battery_level(int level) -> window &
 
 
 void
-window::show()
+window::show(bool timed)
 {
     m_window.set_visible(true);
 
     if (m_hide_timeout) m_hide_timeout.disconnect();
+    if (!timed) return;
 
     m_hide_timeout = Glib::signal_timeout().connect(
         [this]
         {
-            m_window.set_visible(false);
+            hide();
             return false;
         },
         1500);
 }
 
+
+void
+window::hide()
+{ m_window.set_visible(false); }

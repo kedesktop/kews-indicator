@@ -120,5 +120,12 @@ niri::mf_on_event(const Json::Value &event)
         signal_on_workspace_activated.emit(
             std::distance(m_workspaces.begin(), std::ranges::find(m_workspaces, wa["id"].asUInt()))
             + 1);
+        return;
+    }
+
+    if (event.isMember("OverviewOpenedOrClosed"))
+    {
+        signal_on_overview_toggle.emit(event["OverviewOpenedOrClosed"]["is_open"].asBool());
+        return;
     }
 }

@@ -16,7 +16,9 @@ namespace kei::ui
         auto set_focused_workspace(int index) -> window &;
         auto set_current_time(std::string_view time) -> window &;
         auto set_battery_level(int level) -> window &;
-        void show();
+
+        void show(bool timed);
+        void hide();
 
     private:
         Gtk::Window m_window;

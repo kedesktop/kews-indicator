@@ -19,6 +19,7 @@ namespace kei::modules
 
         sigc::signal<void(int)> signal_on_workspace_changed;
         sigc::signal<void(int)> signal_on_workspace_activated;
+        sigc::signal<void(bool)> signal_on_overview_toggle;
 
     private:
         sockaddr_un m_socket_address;
