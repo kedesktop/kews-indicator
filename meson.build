@@ -7,7 +7,6 @@ project('kews-indicator', 'cpp',
 
 deps = [ dependency('gtkmm-4.0'),
          dependency('gtk4-layer-shell-0'),
-         dependency('wireplumber-0.5'),
          dependency('jsoncpp', fallback: [ 'jsoncpp', 'jsoncpp_dep' ]), ]
 
 subdir('src')

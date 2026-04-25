@@ -115,7 +115,7 @@ window::window(const Glib::RefPtr<Gtk::Application> &app)
 
 
 void
-window::mf_update_workspaces()
+window::mf_update_workspaces(int amount, int focused)
 {
     static constexpr std::array positional_classes {
         "begin", "center", "end", "begin-active", "center-active", "end-active"
@@ -126,22 +126,22 @@ window::mf_update_workspaces()
         auto &[box, label] = ws;
         const int ws_num   = static_cast<int>(i) + 1;
 
-        box.set_visible(ws_num <= m_workspace_amount);
+        box.set_visible(ws_num <= amount);
 
         for (const auto *cls : positional_classes) box.remove_css_class(cls);
         label.remove_css_class("active");
 
-        if (ws_num > m_workspace_amount) continue;
+        if (ws_num > amount) continue;
 
         std::string pos_class;
         if (ws_num == 1)
             pos_class = "begin";
-        else if (ws_num == m_workspace_amount)
+        else if (ws_num == amount)
             pos_class = "end";
         else
             pos_class = "center";
 
-        if (ws_num == m_focused_workspace)
+        if (ws_num == focused)
         {
             pos_class += "-active";
             label.add_css_class("active");
@@ -153,27 +153,19 @@ window::mf_update_workspaces()
 
 
 auto
-window::set_workspace_amount(int amount) -> window &
+window::set_workspace_info(int amount, int focused) -> window &
 {
-    m_workspace_amount = amount;
-    mf_update_workspaces();
+    mf_update_workspaces(amount, focused);
     return *this;
 }
 
 
 auto
-window::set_focused_workspace(int index) -> window &
+window::set_current_time(std::chrono::system_clock::time_point time) -> window &
 {
-    m_focused_workspace = index;
-    mf_update_workspaces();
-    return *this;
-}
+    static const auto *time_zone = std::chrono::current_zone();
 
-
-auto
-window::set_current_time(std::string_view time) -> window &
-{
-    m_time.set_markup(std::format("<b>{}</b>", time));
+    m_time.set_markup(std::format("<b>{:%H:%M}</b>", std::chrono::zoned_time { time_zone, time }));
     return *this;
 }
 

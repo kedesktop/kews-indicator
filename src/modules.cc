@@ -13,13 +13,8 @@ using kei::modules::niri;
 namespace kei::modules
 {
     auto
-    get_current_time() noexcept -> std::string
-    {
-        namespace chrono = std::chrono;
-
-        return std::format(
-            "{:%H:%M}", chrono::zoned_time { chrono::current_zone(), chrono::system_clock::now() });
-    }
+    get_current_time() noexcept -> std::chrono::system_clock::time_point
+    { return std::chrono::system_clock::now(); }
 
 
     auto
@@ -36,37 +31,37 @@ namespace kei::modules
 
 niri::niri()
 {
-    memset(&m_socket_address, 0, sizeof(sockaddr_un));
+    memset(&m_address, 0, sizeof(sockaddr_un));
 
     if (const char *path = std::getenv("NIRI_SOCKET"); path == nullptr)
         throw std::runtime_error { "environment variable $NIRI_SOCKET is not defined" };
     else /* NOLINT */
-        std::strcpy(m_socket_address.sun_path, path);
-    m_socket_address.sun_family = AF_UNIX;
+        std::strcpy(m_address.sun_path, path);
+    m_address.sun_family = AF_UNIX;
 
-    if (m_fd = socket(AF_UNIX, SOCK_STREAM, 0); m_fd == -1)
-        throw std::runtime_error { std::format("failed to create a socket: {}",
-                                               std::strerror(errno)) };
+    for (int *fd : { &m_eventstream_fd, &m_workspaces_fd })
+    {
+        if (*fd = socket(AF_UNIX, SOCK_STREAM, 0); *fd == -1)
+            throw std::runtime_error { std::format("failed to create a socket: {}",
+                                                   std::strerror(errno)) };
+
+        if (::connect(*fd, reinterpret_cast<sockaddr *>(&m_address), sizeof(sockaddr_un)) < 0)
+            throw std::runtime_error { std::format("failed to connect to a socket: {}",
+                                                   std::strerror(errno)) };
+    }
 }
 
 
-niri::~niri() { close(m_fd); }
-
-
-auto
-niri::connect() -> niri &
+niri::~niri()
 {
-    if (::connect(m_fd, reinterpret_cast<sockaddr *>(&m_socket_address), sizeof(sockaddr_un)) < 0)
-        throw std::runtime_error { std::format("failed to connect to a socket: {}",
-                                               std::strerror(errno)) };
-    return *this;
+    for (int *fd : { &m_eventstream_fd, &m_workspaces_fd }) close(*fd);
 }
 
 
-auto
-niri::run() -> niri &
+void
+niri::run()
 {
-    if (write(m_fd, "\"EventStream\"\n", 14) < 0)
+    if (write(m_eventstream_fd, "\"EventStream\"\n", 14) != 14)
         throw std::runtime_error { std::format("failed to write to a socket: {}",
                                                std::strerror(errno)) };
 
@@ -75,57 +70,67 @@ niri::run() -> niri &
     std::string message;
     Json::Value event;
 
-    for (char c; read(m_fd, &c, 1) > 0;)
+    for (char c0; read(m_eventstream_fd, &c0, 1) > 0;)
     {
-        if (c != '\n')
-        {
-            message += c;
-            continue;
-        }
+        message += c0;
+        if (c0 != '\n') continue;
 
         if (!reader->parse(message.begin().base(), message.end().base(), &event, nullptr)) continue;
+        message.clear();
 
         mf_on_event(event);
 
-        event.clear();
-        message.clear();
-    }
+        if (write(m_workspaces_fd, "\"Workspaces\"\n", 13) != 13)
+            throw std::runtime_error { std::format("failed to write to a socket: {}",
+                                                   std::strerror(errno)) };
 
-    return *this;
+        for (char c1; read(m_workspaces_fd, &c1, 1) > 0 && c1 != '\n';) message += c1;
+
+        if (!reader->parse(message.begin().base(), message.end().base(), &event, nullptr))
+        {
+            message.clear();
+            continue;
+        }
+
+        message.clear();
+        mf_on_event(event);
+    }
 }
 
 
 void
 niri::mf_on_event(const Json::Value &event)
 {
-    if (event.isMember("Ok")) return;
-    if (event.isMember("Err")) throw std::runtime_error { event["Err"].asCString() };
+    if (event.isMember("Err"))
+        throw std::runtime_error { std::format("niri error: {}", event["Err"].asString()) };
+    if (event.isMember("OverviewOpenedOrClosed"))
+    {
+        if (signal_on_overview_toggle != nullptr)
+            signal_on_overview_toggle(event["OverviewOpenedOrClosed"]["is_open"].asBool());
+        return;
+    }
+
+    const Json::Value *workspaces = nullptr;
+    bool               changed    = false;
 
     if (event.isMember("WorkspacesChanged"))
     {
         std::ranges::fill(m_workspaces, -1);
+        changed = true;
 
-        for (const auto &ws : event["WorkspacesChanged"]["workspaces"])
-            m_workspaces[ws["idx"].asUInt() - 1] = ws["id"].asUInt();
-
-        signal_on_workspace_changed.emit(9 - std::ranges::count(m_workspaces, -1));
-        return;
+        workspaces = &event["WorkspacesChanged"]["workspaces"];
     }
+    else if (event.isMember("Ok") && event["Ok"].isObject() && event["Ok"].isMember("Workspaces"))
+        workspaces = &event["Ok"]["Workspaces"];
 
-    if (event.isMember("WorkspaceActivated"))
+    if (workspaces == nullptr) return;
+
+    for (const auto &ws : *workspaces)
     {
-        const auto &wa = event["WorkspaceActivated"];
-        if (!wa["focused"].asBool()) return;
+        if (changed) m_workspaces[ws["idx"].asUInt() - 1] = ws["id"].asUInt();
+        if (!ws["is_focused"].asBool()) continue;
 
-        signal_on_workspace_activated.emit(
-            std::distance(m_workspaces.begin(), std::ranges::find(m_workspaces, wa["id"].asUInt()))
-            + 1);
-        return;
-    }
-
-    if (event.isMember("OverviewOpenedOrClosed"))
-    {
-        signal_on_overview_toggle.emit(event["OverviewOpenedOrClosed"]["is_open"].asBool());
-        return;
+        if (signal_on_workspace_event != nullptr)
+            signal_on_workspace_event(workspaces->size(), ws["idx"].asUInt());
     }
 }

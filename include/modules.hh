@@ -1,4 +1,6 @@
 #pragma once
+#include <chrono>
+
 #include <sigc++/signal.h>
 #include <sys/un.h>
 
@@ -13,24 +15,24 @@ namespace kei::modules
         niri();
         ~niri();
 
-        auto connect() -> niri &;
-        auto run() -> niri &;
+        void run();
 
 
-        sigc::signal<void(int)> signal_on_workspace_changed;
-        sigc::signal<void(int)> signal_on_workspace_activated;
-        sigc::signal<void(bool)> signal_on_overview_toggle;
+        void (*signal_on_workspace_event)(int, int) = nullptr;
+        void (*signal_on_overview_toggle)(bool)     = nullptr;
 
     private:
-        sockaddr_un m_socket_address;
-        int         m_fd;
+        sockaddr_un m_address;
 
-        std::array<std::int8_t, 9> m_workspaces;
+        int m_eventstream_fd;
+        int m_workspaces_fd;
+
+        std::array<std::int8_t, 10> m_workspaces;
 
         void mf_on_event(const Json::Value &event);
     };
 
 
-    [[nodiscard]] auto get_current_time() noexcept -> std::string;
+    [[nodiscard]] auto get_current_time() noexcept -> std::chrono::system_clock::time_point;
     [[nodiscard]] auto get_battery_level() -> std::uint8_t;
 }

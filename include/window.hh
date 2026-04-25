@@ -1,4 +1,6 @@
 #pragma once
+#include <chrono>
+
 #include <gtkmm/box.h>
 #include <gtkmm/label.h>
 #include <gtkmm/window.h>
@@ -12,9 +14,8 @@ namespace kei::ui
         window(const Glib::RefPtr<Gtk::Application> &app);
 
 
-        auto set_workspace_amount(int amount) -> window &;
-        auto set_focused_workspace(int index) -> window &;
-        auto set_current_time(std::string_view time) -> window &;
+        auto set_workspace_info(int amount, int focused) -> window &;
+        auto set_current_time(std::chrono::system_clock::time_point time) -> window &;
         auto set_battery_level(int level) -> window &;
 
         void show(bool timed);
@@ -31,13 +32,10 @@ namespace kei::ui
         Gtk::Label m_time;
         Gtk::Label m_battery;
 
-        int m_workspace_amount;
-        int m_focused_workspace;
-
         sigc::connection m_hide_timeout;
 
 
-        void mf_update_workspaces();
+        void mf_update_workspaces(int amount, int focused);
     };
 }
 
